@@ -1,0 +1,7 @@
+{
+  "name": "Ringkas Aset",
+  "description": "Inventaris Cepat, Laporan Tepat. Aplikasi untuk manajemen aset dan inventaris sekolah yang cepat, mudah, dan efisien, menggantikan buku inventaris manual atau spreadsheet yang lambat dan rentan kesalahan.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
