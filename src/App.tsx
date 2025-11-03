@@ -1,4 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 import {
   Asset,
   FixedAsset,
@@ -9,7 +12,7 @@ import {
   Role,
   User,
 } from './types';
-import { AssetStatusPieChart, TopConsumablesBarChart } from './components/Charts';
+import { AssetStatusPieChart, TopConsumablesBarChart, AssetValueByLocationChart, AssetAcquisitionChart } from './components/Charts';
 import { 
     PlusIcon, WrenchIcon, ReportIcon, QrCodeIcon, HomeIcon, ArchiveBoxIcon, MinusIcon, UsersIcon, PencilIcon, TrashIcon, Cog6ToothIcon
 } from './components/Icons';
@@ -53,10 +56,10 @@ const INITIAL_FIXED_ASSETS: FixedAsset[] = [
   { id: 'fa-1', name: 'Laptop ASUS', code: 'LP-001', type: AssetType.Tetap, locationId: 'loc-1', purchaseDate: '2023-01-15', price: 12000000, status: AssetStatus.Baik, photoUrl: 'https://picsum.photos/seed/laptop1/200/200' },
   { id: 'fa-2', name: 'Proyektor InFocus', code: 'PR-001', type: AssetType.Tetap, locationId: 'loc-2', purchaseDate: '2022-08-20', price: 7500000, status: AssetStatus.RusakBerat, photoUrl: 'https://picsum.photos/seed/projector/200/200' },
   { id: 'fa-3', name: 'Meja Guru', code: 'MJ-010', type: AssetType.Tetap, locationId: 'loc-1', purchaseDate: '2020-03-10', price: 1500000, status: AssetStatus.Baik, photoUrl: 'https://picsum.photos/seed/desk/200/200' },
-  { id: 'fa-4', name: 'Kursi Siswa', code: 'KS-105', type: AssetType.Tetap, locationId: 'loc-3', purchaseDate: '2020-03-10', price: 450000, status: AssetStatus.RusakRingan, photoUrl: 'https://picsum.photos/seed/chair1/200/200' },
+  { id: 'fa-4', name: 'Kursi Siswa', code: 'KS-105', type: AssetType.Tetap, locationId: 'loc-3', purchaseDate: '2023-04-10', price: 450000, status: AssetStatus.RusakRingan, photoUrl: 'https://picsum.photos/seed/chair1/200/200' },
   { id: 'fa-5', name: 'Laptop Lenovo', code: 'LP-002', type: AssetType.Tetap, locationId: 'loc-2', purchaseDate: '2023-05-11', price: 9500000, status: AssetStatus.Baik, photoUrl: 'https://picsum.photos/seed/laptop2/200/200' },
-  { id: 'fa-6', name: 'Papan Tulis Digital', code: 'PT-001', type: AssetType.Tetap, locationId: 'loc-3', purchaseDate: '2023-09-01', price: 25000000, status: AssetStatus.Baik, photoUrl: 'https://picsum.photos/seed/whiteboard/200/200' },
-  { id: 'fa-7', name: 'AC Ruangan', code: 'AC-003', type: AssetType.Tetap, locationId: 'loc-1', purchaseDate: '2021-06-20', price: 4500000, status: AssetStatus.Baik, photoUrl: 'https://picsum.photos/seed/ac/200/200' },
+  { id: 'fa-6', name: 'Papan Tulis Digital', code: 'PT-001', type: AssetType.Tetap, locationId: 'loc-3', purchaseDate: '2024-01-01', price: 25000000, status: AssetStatus.Baik, photoUrl: 'https://picsum.photos/seed/whiteboard/200/200' },
+  { id: 'fa-7', name: 'AC Ruangan', code: 'AC-003', type: AssetType.Tetap, locationId: 'loc-1', purchaseDate: '2024-02-20', price: 4500000, status: AssetStatus.Baik, photoUrl: 'https://picsum.photos/seed/ac/200/200' },
 ];
 
 const INITIAL_CONSUMABLE_ASSETS: ConsumableAsset[] = [
@@ -174,7 +177,7 @@ const Header: React.FC<HeaderProps> = ({ onNavigate, activeView, currentUser, on
     const availableNavItems = NAV_ITEMS.filter(item => item.roles.includes(currentUser.role));
 
     return (
-        <header className="bg-white shadow-sm sticky top-0 z-20">
+        <header className="bg-white shadow-sm sticky top-0 z-20 no-print">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
                     <div className="flex items-center space-x-2">
@@ -245,8 +248,8 @@ const BottomNav: React.FC<HeaderProps> = ({ onNavigate, activeView, currentUser 
 };
 
 
-const Card: React.FC<{ children: React.ReactNode, className?: string }> = ({ children, className }) => (
-    <div className={`bg-white rounded-xl shadow-md p-4 sm:p-6 ${className}`}>
+const Card: React.FC<{ children: React.ReactNode, className?: string, id?: string }> = ({ children, className, id }) => (
+    <div id={id} className={`bg-white rounded-xl shadow-md p-4 sm:p-6 ${className}`}>
         {children}
     </div>
 );
@@ -744,22 +747,226 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ fixedAssets, consumableAs
     );
 };
 
-const ReportsPage = () => {
+type ReportsPageProps = {
+    fixedAssets: FixedAsset[];
+    consumableAssets: ConsumableAsset[];
+    locations: Location[];
+};
+
+const ReportsPage: React.FC<ReportsPageProps> = ({ fixedAssets, consumableAssets, locations }) => {
+    const locationMap = useMemo(() => new Map(locations.map(loc => [loc.id, loc.name])), [locations]);
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    const [isPrinting, setIsPrinting] = useState(false);
+
+    const filteredFixedAssets = useMemo(() => {
+        return fixedAssets.filter(asset => {
+            if (startDate && asset.purchaseDate < startDate) return false;
+            if (endDate && asset.purchaseDate > endDate) return false;
+            return true;
+        });
+    }, [fixedAssets, startDate, endDate]);
+
+    const summary = useMemo(() => {
+        const totalValue = filteredFixedAssets.reduce((sum, asset) => sum + asset.price, 0);
+        const damagedCount = filteredFixedAssets.filter(a => a.status !== AssetStatus.Baik).length;
+        return { totalValue, damagedCount, newAssetsCount: filteredFixedAssets.length };
+    }, [filteredFixedAssets]);
+
+    const handleGeneratePdf = async () => {
+        setIsPrinting(true);
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const margin = 15;
+        let cursorY = margin;
+
+        // --- Header ---
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Ringkas Aset', margin, cursorY);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Laporan Inventaris Aset', margin, cursorY + 8);
+        
+        const today = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Dicetak pada: ${today}`, doc.internal.pageSize.getWidth() - margin, cursorY, { align: 'right' });
+        if (startDate || endDate) {
+            const period = `Periode: ${startDate || '...'} s/d ${endDate || '...'}`;
+            doc.text(period, doc.internal.pageSize.getWidth() - margin, cursorY + 5, { align: 'right' });
+        }
+        cursorY += 20;
+
+        // --- Summary Cards ---
+        const summaryElement = document.getElementById('report-summary');
+        if (summaryElement) {
+            const canvas = await html2canvas(summaryElement, { scale: 2 });
+            const imgData = canvas.toDataURL('image/png');
+            const imgProps = doc.getImageProperties(imgData);
+            const pdfWidth = doc.internal.pageSize.getWidth() - 2 * margin;
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+            doc.addImage(imgData, 'PNG', margin, cursorY, pdfWidth, pdfHeight);
+            cursorY += pdfHeight + 10;
+        }
+
+        // --- Charts ---
+        const chartsElement = document.getElementById('report-charts');
+        if (chartsElement) {
+            const canvas = await html2canvas(chartsElement, { scale: 2 });
+            const imgData = canvas.toDataURL('image/png');
+            const imgProps = doc.getImageProperties(imgData);
+            const pdfWidth = doc.internal.pageSize.getWidth() - 2 * margin;
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+             if (cursorY + pdfHeight > doc.internal.pageSize.getHeight() - margin) {
+                doc.addPage();
+                cursorY = margin;
+            }
+            doc.addImage(imgData, 'PNG', margin, cursorY, pdfWidth, pdfHeight);
+            cursorY += pdfHeight + 10;
+        }
+
+        // --- Data Table ---
+        if (filteredFixedAssets.length > 0) {
+            (doc as any).autoTable({
+                startY: cursorY,
+                head: [['Nama', 'Kode', 'Lokasi', 'Tgl. Beli', 'Status', 'Harga']],
+                body: filteredFixedAssets.map(asset => [
+                    asset.name,
+                    asset.code,
+                    locationMap.get(asset.locationId) || 'N/A',
+                    asset.purchaseDate,
+                    asset.status,
+                    formatCurrency(asset.price),
+                ]),
+                theme: 'grid',
+                headStyles: { fillColor: [22, 163, 74] },
+                didDrawPage: (data) => {
+                    // Footer
+                    const pageCount = doc.internal.pages.length;
+                    doc.setFontSize(10);
+                    doc.text(
+                        `Halaman ${data.pageNumber} dari ${pageCount - 1}`,
+                        doc.internal.pageSize.getWidth() / 2,
+                        doc.internal.pageSize.getHeight() - 10,
+                        { align: 'center' }
+                    );
+                }
+            });
+        }
+
+        doc.save(`laporan-aset-${new Date().toISOString().slice(0, 10)}.pdf`);
+        setIsPrinting(false);
+    };
+
+    const handleResetFilter = () => {
+        setStartDate('');
+        setEndDate('');
+    };
+
     return (
-        <Card>
-            <h2 className="text-xl font-bold text-slate-800">Laporan</h2>
-            <p className="text-slate-500 mt-2">Fitur laporan sedang dalam pengembangan. Segera hadir: laporan PDF dan ekspor Excel yang dapat disesuaikan.</p>
-             <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-400 text-blue-800">
-                <p className="font-semibold">Fitur "Wow" yang Akan Datang!</p>
-                <ul className="list-disc list-inside mt-2 text-sm">
-                    <li>Ringkasan eksekutif visual untuk Kepala Sekolah.</li>
-                    <li>Grafik tren penggunaan ATK dan komposisi aset per ruangan.</li>
-                    <li>Daftar Aksi: barang yang perlu dibeli dan aset yang butuh perhatian.</li>
-                </ul>
+        <div className="space-y-6">
+             <Card>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-800">Laporan Inventaris</h2>
+                        <p className="text-sm text-slate-500 mt-1">Ringkasan dan analisis data aset sekolah.</p>
+                    </div>
+                    <button 
+                        onClick={handleGeneratePdf} 
+                        disabled={isPrinting}
+                        className="no-print flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-slate-400 disabled:cursor-wait"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" /></svg>
+                        <span>{isPrinting ? 'Mencetak...' : 'Cetak Laporan PDF'}</span>
+                    </button>
+                </div>
+            </Card>
+
+            <Card className="no-print">
+                <h3 className="font-semibold text-slate-800 mb-2">Filter Laporan</h3>
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 w-full">
+                        <label className="text-sm font-medium text-slate-700">Dari Tanggal</label>
+                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${INPUT_CLASSES} py-1.5`} />
+                    </div>
+                     <div className="flex-1 w-full">
+                        <label className="text-sm font-medium text-slate-700">Sampai Tanggal</label>
+                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`${INPUT_CLASSES} py-1.5`} />
+                    </div>
+                    <button onClick={handleResetFilter} className="w-full md:w-auto px-4 py-2 text-sm font-medium bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">Reset</button>
+                </div>
+            </Card>
+
+            {/* This section will be captured for PDF */}
+            <div id="printable-area">
+                 <div id="report-summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <Card>
+                        <h3 className="text-sm font-medium text-slate-500">Total Aset Tetap</h3>
+                        <p className="mt-1 text-3xl font-semibold text-slate-900">{fixedAssets.length}</p>
+                    </Card>
+                     <Card>
+                        <h3 className="text-sm font-medium text-slate-500">Nilai Total (Periode)</h3>
+                        <p className="mt-1 text-3xl font-semibold text-slate-900">{formatCurrency(summary.totalValue)}</p>
+                    </Card>
+                     <Card>
+                        <h3 className="text-sm font-medium text-slate-500">Aset Baru (Periode)</h3>
+                        <p className="mt-1 text-3xl font-semibold text-blue-600">{summary.newAssetsCount}</p>
+                    </Card>
+                     <Card>
+                        <h3 className="text-sm font-medium text-slate-500">Aset Rusak (Periode)</h3>
+                        <p className="mt-1 text-3xl font-semibold text-amber-600">{summary.damagedCount}</p>
+                    </Card>
+                </div>
+
+                <div id="report-charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <Card>
+                        <h3 className="font-semibold text-slate-800 mb-4">Nilai Aset per Lokasi (Periode)</h3>
+                        <AssetValueByLocationChart fixedAssets={filteredFixedAssets} locations={locations} />
+                    </Card>
+                     <Card>
+                        <h3 className="font-semibold text-slate-800 mb-4">Tren Akuisisi Aset (Periode)</h3>
+                        <AssetAcquisitionChart data={filteredFixedAssets} />
+                    </Card>
+                </div>
+
+                <Card>
+                    <h3 className="font-semibold text-slate-800 mb-4">Rincian Aset Tetap (Periode)</h3>
+                    <div className="overflow-x-auto">
+                         <table className="w-full text-sm text-left text-slate-500">
+                            <thead className="text-xs text-slate-700 uppercase bg-slate-100">
+                                <tr>
+                                    <th className="px-4 py-2">Nama</th>
+                                    <th className="px-4 py-2">Kode</th>
+                                    <th className="px-4 py-2">Lokasi</th>
+                                    <th className="px-4 py-2">Tgl. Beli</th>
+                                    <th className="px-4 py-2">Status</th>
+                                    <th className="px-4 py-2 text-right">Harga</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredFixedAssets.length > 0 ? filteredFixedAssets.map(asset => (
+                                    <tr key={asset.id} className="bg-white border-b">
+                                        <td className="px-4 py-2 font-medium">{asset.name}</td>
+                                        <td className="px-4 py-2">{asset.code}</td>
+                                        <td className="px-4 py-2">{locationMap.get(asset.locationId)}</td>
+                                        <td className="px-4 py-2">{asset.purchaseDate}</td>
+                                        <td className="px-4 py-2">{asset.status}</td>
+                                        <td className="px-4 py-2 text-right">{formatCurrency(asset.price)}</td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan={6} className="text-center py-8 text-slate-500">Tidak ada data aset tetap pada periode yang dipilih.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
             </div>
-        </Card>
-    )
-}
+        </div>
+    );
+};
+
 
 type UsersPageProps = {
     users: User[];
@@ -1579,7 +1786,7 @@ const App: React.FC = () => {
             case 'inventory':
                 return <InventoryPage fixedAssets={visibleFixedAssets} consumableAssets={visibleConsumableAssets} locations={locations} currentUser={currentUser} onAddAsset={handleAddAssetClick} onEditAsset={handleEditAssetClick} onDeleteAsset={handleDeleteAsset} onManageLocations={() => setIsManageLocationsModalOpen(true)} />;
             case 'reports':
-                return <ReportsPage />;
+                return <ReportsPage fixedAssets={fixedAssets} consumableAssets={consumableAssets} locations={locations} />;
             case 'users':
                 return <UsersPage users={users} onAddUser={handleAddUserClick} onEditUser={handleEditUserClick} onDeleteUser={handleDeleteUser} />;
             default:
