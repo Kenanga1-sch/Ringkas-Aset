@@ -309,17 +309,19 @@ const Dashboard: React.FC<DashboardProps> = ({ fixedAssets, consumableAssets, on
 };
 
 // --- INVENTORY PAGE OPTIMIZATION COMPONENTS ---
-
-const usePagination = <T,>(data: T[], itemsPerPage: number = 5) => {
+const usePagination = <T,>(data: T[], initialItemsPerPage: number = 5) => {
     const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(initialItemsPerPage);
+
     const totalPages = Math.ceil(data.length / itemsPerPage);
 
     useEffect(() => {
-        // Reset to page 1 if filtered data changes and current page is out of bounds
         if (currentPage > totalPages && totalPages > 0) {
             setCurrentPage(totalPages);
+        } else if (currentPage === 0 && totalPages > 0) {
+            setCurrentPage(1);
         } else if (totalPages === 0) {
-             setCurrentPage(1);
+            setCurrentPage(1);
         }
     }, [data.length, totalPages, currentPage]);
 
@@ -330,6 +332,11 @@ const usePagination = <T,>(data: T[], itemsPerPage: number = 5) => {
 
     const nextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages));
     const prevPage = () => setCurrentPage(prev => Math.max(prev - 1, 1));
+    
+    const handleItemsPerPageChange = (newSize: number) => {
+        setItemsPerPage(newSize);
+        setCurrentPage(1); // Reset to first page when page size changes
+    };
 
     return {
         currentPage,
@@ -339,6 +346,8 @@ const usePagination = <T,>(data: T[], itemsPerPage: number = 5) => {
         prevPage,
         canGoNext: currentPage < totalPages,
         canGoPrev: currentPage > 1,
+        itemsPerPage,
+        setItemsPerPage: handleItemsPerPageChange,
     };
 };
 
@@ -350,21 +359,67 @@ type PaginationControlsProps = {
     onPrev: () => void;
     canGoNext: boolean;
     canGoPrev: boolean;
+    itemsPerPage: number;
+    onItemsPerPageChange: (size: number) => void;
+    dataLength: number;
 };
-const PaginationControls: React.FC<PaginationControlsProps> = ({ currentPage, totalPages, onNext, onPrev, canGoNext, canGoPrev }) => {
-    if (totalPages <= 1) return null;
+
+const PaginationControls: React.FC<PaginationControlsProps> = ({ 
+    currentPage, 
+    totalPages, 
+    onNext, 
+    onPrev, 
+    canGoNext, 
+    canGoPrev,
+    itemsPerPage,
+    onItemsPerPageChange,
+    dataLength,
+}) => {
+    if (dataLength === 0) return null;
     
+    const pageOptions = [5, 10, 20, 50];
+
     return (
-        <div className="flex items-center justify-between mt-4 px-2 py-2 border-t border-slate-200">
-            <span className="text-sm text-slate-600">
-                Halaman <span className="font-semibold">{currentPage}</span> dari <span className="font-semibold">{totalPages}</span>
+        <div className="flex flex-col sm:flex-row items-center justify-between mt-4 px-2 py-2 border-t border-slate-200 gap-4">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+                <span>Tampilkan</span>
+                <select
+                    value={itemsPerPage}
+                    onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
+                    className="bg-white border border-slate-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    aria-label="Items per page"
+                >
+                    {pageOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                    ))}
+                </select>
+                <span>item</span>
+            </div>
+            
+            <span className="text-sm text-slate-600 order-first sm:order-none">
+                Halaman <span className="font-semibold">{currentPage}</span> dari <span className="font-semibold">{totalPages > 0 ? totalPages : 1}</span>
             </span>
+
             <div className="flex items-center gap-2">
-                <button onClick={onPrev} disabled={!canGoPrev} className="px-3 py-1 text-sm font-medium border border-slate-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors">
-                    Sebelumnya
+                <button 
+                    onClick={onPrev} 
+                    disabled={!canGoPrev} 
+                    className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 mr-1">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                    </svg>
+                    <span>Sebelumnya</span>
                 </button>
-                <button onClick={onNext} disabled={!canGoNext} className="px-3 py-1 text-sm font-medium border border-slate-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors">
-                    Berikutnya
+                <button 
+                    onClick={onNext} 
+                    disabled={!canGoNext} 
+                    className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                    <span>Berikutnya</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 ml-1">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                    </svg>
                 </button>
             </div>
         </div>
@@ -405,7 +460,17 @@ type FixedAssetTableProps = {
     onDeleteAsset: (assetId: string) => void;
 };
 const FixedAssetTable: React.FC<FixedAssetTableProps> = ({ assets, locationMap, onEditAsset, onDeleteAsset }) => {
-    const { paginatedData, ...paginationProps } = usePagination(assets);
+    const { 
+        paginatedData,
+        currentPage,
+        totalPages,
+        nextPage,
+        prevPage,
+        canGoNext,
+        canGoPrev,
+        itemsPerPage,
+        setItemsPerPage 
+    } = usePagination(assets);
 
     return (
         <>
@@ -454,7 +519,17 @@ const FixedAssetTable: React.FC<FixedAssetTableProps> = ({ assets, locationMap, 
                     </tbody>
                 </table>
             </div>
-            <PaginationControls {...paginationProps} onNext={paginationProps.nextPage} onPrev={paginationProps.prevPage} />
+            <PaginationControls 
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onNext={nextPage}
+                onPrev={prevPage}
+                canGoNext={canGoNext}
+                canGoPrev={canGoPrev}
+                itemsPerPage={itemsPerPage}
+                onItemsPerPageChange={setItemsPerPage}
+                dataLength={assets.length}
+            />
         </>
     );
 };
@@ -466,7 +541,17 @@ type ConsumableAssetTableProps = {
     onDeleteAsset: (assetId: string) => void;
 };
 const ConsumableAssetTable: React.FC<ConsumableAssetTableProps> = ({ assets, locationMap, onEditAsset, onDeleteAsset }) => {
-    const { paginatedData, ...paginationProps } = usePagination(assets);
+    const { 
+        paginatedData,
+        currentPage,
+        totalPages,
+        nextPage,
+        prevPage,
+        canGoNext,
+        canGoPrev,
+        itemsPerPage,
+        setItemsPerPage 
+    } = usePagination(assets);
 
     return (
         <>
@@ -505,7 +590,17 @@ const ConsumableAssetTable: React.FC<ConsumableAssetTableProps> = ({ assets, loc
                     </tbody>
                 </table>
             </div>
-            <PaginationControls {...paginationProps} onNext={paginationProps.nextPage} onPrev={paginationProps.prevPage} />
+            <PaginationControls 
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onNext={nextPage}
+                onPrev={prevPage}
+                canGoNext={canGoNext}
+                canGoPrev={canGoPrev}
+                itemsPerPage={itemsPerPage}
+                onItemsPerPageChange={setItemsPerPage}
+                dataLength={assets.length}
+            />
         </>
     );
 };
@@ -525,22 +620,23 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ fixedAssets, consumableAs
     const [activeTab, setActiveTab] = useState<AssetType>(AssetType.Tetap);
     const locationMap = useMemo(() => new Map(locations.map(loc => [loc.id, loc.name])), [locations]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
 
     const filteredFixedAssets = useMemo(() => {
         return fixedAssets.filter(asset =>
-            asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            asset.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (locationMap.get(asset.locationId) || '').toLowerCase().includes(searchTerm.toLowerCase())
+            (selectedLocationId === 'all' || asset.locationId === selectedLocationId) &&
+            (asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            asset.code.toLowerCase().includes(searchTerm.toLowerCase()))
         );
-    }, [fixedAssets, searchTerm, locationMap]);
+    }, [fixedAssets, searchTerm, selectedLocationId]);
 
     const filteredConsumableAssets = useMemo(() => {
         return consumableAssets.filter(asset =>
-            asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            asset.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (locationMap.get(asset.locationId) || '').toLowerCase().includes(searchTerm.toLowerCase())
+            (selectedLocationId === 'all' || asset.locationId === selectedLocationId) &&
+            (asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            asset.code.toLowerCase().includes(searchTerm.toLowerCase()))
         );
-    }, [consumableAssets, searchTerm, locationMap]);
+    }, [consumableAssets, searchTerm, selectedLocationId]);
 
     return (
         <Card>
@@ -563,14 +659,27 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ fixedAssets, consumableAs
                 </div>
             </div>
 
-            <div className="mb-4">
+            <div className="flex flex-col sm:flex-row gap-4 mb-4">
                 <input
                     type="text"
-                    placeholder="Cari berdasarkan nama, kode, atau lokasi..."
+                    placeholder="Cari berdasarkan nama atau kode..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-grow w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                 <select
+                    value={selectedLocationId}
+                    onChange={(e) => setSelectedLocationId(e.target.value)}
+                    className="w-full sm:w-auto px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    aria-label="Filter berdasarkan lokasi"
+                >
+                    <option value="all">Semua Lokasi</option>
+                    {locations.map(loc => (
+                        <option key={loc.id} value={loc.id}>
+                            {loc.name}
+                        </option>
+                    ))}
+                </select>
             </div>
 
             <div className="border-b border-slate-200">
@@ -609,7 +718,7 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ fixedAssets, consumableAs
                         />
                     ) : (
                         <EmptyState 
-                            message={searchTerm ? `Tidak ada aset tetap yang cocok dengan pencarian "${searchTerm}".` : "Belum ada aset tetap yang ditambahkan."}
+                            message={searchTerm || selectedLocationId !== 'all' ? `Tidak ada aset tetap yang cocok dengan filter saat ini.` : "Belum ada aset tetap yang ditambahkan."}
                             actionLabel="Tambah Aset Tetap"
                             onAction={onAddAsset} 
                         />
@@ -624,7 +733,7 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ fixedAssets, consumableAs
                         />
                     ) : (
                         <EmptyState 
-                             message={searchTerm ? `Tidak ada barang yang cocok dengan pencarian "${searchTerm}".` : "Belum ada barang habis pakai yang ditambahkan."}
+                             message={searchTerm || selectedLocationId !== 'all' ? `Tidak ada barang yang cocok dengan filter saat ini.` : "Belum ada barang habis pakai yang ditambahkan."}
                              actionLabel="Tambah Barang Habis Pakai"
                              onAction={onAddAsset} 
                         />
